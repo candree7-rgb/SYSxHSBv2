@@ -10,7 +10,8 @@ from config import (
     CATEGORY, QUOTE, LEVERAGE, RISK_PCT,
     MAX_CONCURRENT_TRADES, MAX_TRADES_PER_DAY, TC_MAX_LAG_SEC,
     POLL_SECONDS, POLL_JITTER_MAX,
-    STATE_FILE, DRY_RUN, LOG_LEVEL
+    STATE_FILE, DRY_RUN, LOG_LEVEL,
+    TP_SPLITS, DCA_QTY_MULTS, INITIAL_SL_PCT
 )
 from bybit_v5 import BybitV5
 from discord_reader import DiscordReader
@@ -57,6 +58,8 @@ def main():
     log.info(f"Config: RISK_PCT={RISK_PCT}%, MAX_CONCURRENT={MAX_CONCURRENT_TRADES}, MAX_DAILY={MAX_TRADES_PER_DAY}")
     log.info(f"Config: POLL_SECONDS={POLL_SECONDS}, TC_MAX_LAG_SEC={TC_MAX_LAG_SEC}")
     log.info(f"Config: DRY_RUN={DRY_RUN}, LOG_LEVEL={LOG_LEVEL}")
+    log.info(f"Config: TP_SPLITS={TP_SPLITS}, DCA_QTY_MULTS={DCA_QTY_MULTS}")
+    log.info(f"Config: INITIAL_SL_PCT={INITIAL_SL_PCT}%")
 
     # Initialize database if enabled
     if db_export.is_enabled():
