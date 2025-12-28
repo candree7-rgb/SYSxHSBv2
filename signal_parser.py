@@ -5,63 +5,60 @@ from typing import Any, Dict, Optional, List
 NUM = r"([0-9]+(?:\.[0-9]+)?)"
 
 # ============================================================
-# AO TRADING FORMAT
+# AO TRADING FORMAT (with optional ** markdown bold)
 # ============================================================
-# Beispiel-Signal:
-# 🔴 SHORT SIGNAL - AT/USDT
-# Leverage: 25x • Trader: haseeb1111
-# 📊 Entry: 0.16200 ✅ Triggered
-# 🎯 Profit Targets:
-# ✅ TP1: 0.16006 HIT (+30.00%)
-# 🎯 TP4: 0.14904 → NEXT
-# 📊 DCA Levels:
-# ⏳ DCA1: 0.16590 Pending
-# 🛡️ Stop Loss: 0.16200
+# Beispiel-Signal (echtes Format aus Discord):
+# 🔴 **SHORT SIGNAL - ICNT/USDT**
+# **Leverage:** 25x • **Trader:** haseeb1111
+# 📊 Entry: `0.52100` ⏳ *Pending*
+# 🎯 **TP1:** `0.51475` **→ NEXT**
+# ⏳ **TP2:** `0.50850` *Pending*
+# ⏳ **TP3:** `0.50016` *Pending*
+# 🛡️ **Stop Loss:** `0.53000`
 # ============================================================
 
-# Symbol and Side: "🔴 SHORT SIGNAL - AT/USDT" oder "🟢 LONG SIGNAL - AT/USDT"
-# Auch ohne Emoji: "SHORT SIGNAL - AT/USDT"
+# Symbol and Side: "🔴 **SHORT SIGNAL - ICNT/USDT**"
+# Mit optionalen ** vor und nach dem Text
 RE_SYMBOL_SIDE = re.compile(
-    r"(LONG|SHORT)\s+SIGNAL\s*[-–—]\s*([A-Z0-9]+)/([A-Z]+)",
+    r"\*{0,2}(LONG|SHORT)\s+SIGNAL\s*[-–—]\s*([A-Z0-9]+)/([A-Z]+)\*{0,2}",
     re.I
 )
 
-# Entry: "📊 Entry: 0.16200" (optional mit Status wie ✅ Triggered, ⏳ Pending)
+# Entry: "📊 Entry: `0.52100`" (mit optionalen backticks und $)
 RE_ENTRY = re.compile(
-    r"Entry\s*:\s*\$?" + NUM,
+    r"Entry\s*:\s*`?\$?" + NUM + r"`?",
     re.I
 )
 
-# TP: verschiedene Formate:
-# "✅ TP1: 0.16006 HIT (+30.00%)"
-# "🎯 TP4: 0.14904 → NEXT"
-# "⏳ TP2: 0.15811 Pending"
+# TP: verschiedene Formate mit optionalen ** und backticks:
+# "🎯 **TP1:** `0.51475` **→ NEXT**"
+# "⏳ **TP2:** `0.50850` *Pending*"
 RE_TP = re.compile(
-    r"TP(\d+)\s*:\s*\$?" + NUM,
+    r"\*{0,2}TP(\d+)\s*:\s*\*{0,2}\s*`?\$?" + NUM + r"`?",
     re.I
 )
 
-# DCA: "⏳ DCA1: 0.16590 Pending" (nur 1 DCA oder keines)
+# DCA: "⏳ **DCA1:** `0.16590` *Pending*" (mit optionalen ** und backticks)
 RE_DCA = re.compile(
-    r"DCA(\d+)\s*:\s*\$?" + NUM,
+    r"\*{0,2}DCA\s*#?\s*(\d+)\s*:\s*\*{0,2}\s*`?\$?" + NUM + r"`?",
     re.I
 )
 
-# Stop Loss: "🛡️ Stop Loss: 0.16200" (optional mit Status wie ❌ HIT, ✅ Moved to Breakeven)
+# Stop Loss: "🛡️ **Stop Loss:** `0.53000`" (mit optionalen ** und backticks)
 RE_SL = re.compile(
-    r"Stop\s*Loss\s*:\s*\$?" + NUM,
+    r"\*{0,2}Stop\s*Loss\s*:\s*\*{0,2}\s*`?\$?" + NUM + r"`?",
     re.I
 )
 
-# Leverage: "Leverage: 25x"
+# Leverage: "**Leverage:** 25x"
 RE_LEVERAGE = re.compile(
-    r"Leverage\s*:\s*(\d+)x",
+    r"\*{0,2}Leverage\s*:\s*\*{0,2}\s*(\d+)x",
     re.I
 )
 
-# Trader/Caller: "Trader: haseeb1111" oder "Caller: haseeb1111"
+# Trader/Caller: "**Trader:** haseeb1111"
 RE_TRADER = re.compile(
-    r"(?:Trader|Caller)\s*:\s*(\w+)",
+    r"\*{0,2}(?:Trader|Caller)\s*:\s*\*{0,2}\s*(\w+)",
     re.I
 )
 
