@@ -313,10 +313,30 @@ class TradeEngine:
             return
 
         # ---- Calculate SL price ----
-        sl_pct = INITIAL_SL_PCT / 100.0
-        sl_price = entry * (1 + sl_pct) if side == "Sell" else entry * (1 - sl_pct)
-        sl_price = self._round_price(sl_price, tick_size)
-        self.log.info(f"📍 SL at {INITIAL_SL_PCT}% from entry: {sl_price}")
+        # Priority: 1) Signal SL, 2) DCA+4%, 3) INITIAL_SL_PCT fallback
+        signal_sl = trade.get("sl_price")
+        dca_prices: List[float] = trade.get("dca_prices") or []
+
+        if signal_sl:
+            # Use SL from signal
+            sl_price = self._round_price(float(signal_sl), tick_size)
+            self.log.info(f"📍 SL from signal: {sl_price}")
+        elif dca_prices:
+            # No SL in signal but has DCA: set SL at DCA + 4%
+            dca_buffer_pct = 0.04  # 4% above/below DCA
+            first_dca = float(dca_prices[0])
+            if side == "Sell":  # Short: SL above DCA
+                sl_price = first_dca * (1 + dca_buffer_pct)
+            else:  # Long: SL below DCA
+                sl_price = first_dca * (1 - dca_buffer_pct)
+            sl_price = self._round_price(sl_price, tick_size)
+            self.log.info(f"📍 SL at DCA+4%: {sl_price} (DCA1: {first_dca})")
+        else:
+            # No SL and no DCA: use fallback percentage
+            sl_pct = INITIAL_SL_PCT / 100.0
+            sl_price = entry * (1 + sl_pct) if side == "Sell" else entry * (1 - sl_pct)
+            sl_price = self._round_price(sl_price, tick_size)
+            self.log.info(f"📍 SL at {INITIAL_SL_PCT}% from entry: {sl_price}")
 
         tp_prices: List[float] = trade.get("tp_prices") or []
         splits: List[float] = trade.get("tp_splits") or TP_SPLITS
@@ -365,8 +385,7 @@ class TradeEngine:
                 }
             })
 
-        # Build DCA orders
-        dca_prices: List[float] = trade.get("dca_prices") or []
+        # Build DCA orders (dca_prices already loaded above for SL calculation)
         dca_to_place = min(len(dca_prices), len(DCA_QTY_MULTS))
         self.log.info(f"📊 Placing {dca_to_place} DCAs (mults: {DCA_QTY_MULTS[:dca_to_place]})")
         last = self.bybit.last_price(CATEGORY, symbol)
