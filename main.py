@@ -77,7 +77,8 @@ def main():
     HEARTBEAT_INTERVAL = 300  # Log heartbeat every 5 minutes
 
     # Signal update tracking
-    last_signal_update_check = time.time()
+    # First check after 10 seconds, then every 60 seconds
+    last_signal_update_check = time.time() - 50  # Will trigger first check after ~10 sec
     SIGNAL_UPDATE_INTERVAL = 60  # Check for signal updates every 60 seconds
 
     # ----- Signal Update Checker -----
