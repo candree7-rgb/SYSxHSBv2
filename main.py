@@ -15,7 +15,7 @@ from config import (
 )
 from bybit_v5 import BybitV5
 from discord_reader import DiscordReader
-from signal_parser import parse_signal, signal_hash
+from signal_parser import parse_signal, parse_signal_update, signal_hash
 from state import load_state, save_state, utc_day_key
 from trade_engine import TradeEngine
 import db_export
@@ -97,6 +97,7 @@ def main():
             try:
                 msg_id = tr.get("discord_msg_id")
                 if not msg_id:
+                    log.info(f"   {tr.get('symbol')}: No msg_id saved, skipping")
                     continue
 
                 # Fetch single message by ID
@@ -108,19 +109,24 @@ def main():
                 }
                 r = requests.get(url, headers=headers, timeout=10)
                 if r.status_code != 200:
+                    log.warning(f"   {tr.get('symbol')}: HTTP {r.status_code} fetching msg {msg_id}")
                     continue
 
                 msg = r.json()
                 txt = discord.extract_text(msg)
 
-                # Parse the updated signal
-                sig = parse_signal(txt, quote=QUOTE)
-                if not sig:
-                    continue
+                # Parse only SL/DCA from updated signal (doesn't require "NEW SIGNAL")
+                sig = parse_signal_update(txt)
 
-                # Check if SL changed
+                # Log what we found
                 new_sl = sig.get("sl_price")
+                new_dcas = sig.get("dca_prices") or []
                 old_sl = tr.get("sl_price")
+                old_dcas = tr.get("dca_prices") or []
+
+                log.info(f"   {tr['symbol']}: old SL={old_sl} → new SL={new_sl} | old DCAs={old_dcas} → new DCAs={new_dcas}")
+                log.debug(f"   Raw text: {txt[:300]}...")
+
                 is_open = tr.get("status") == "open"
 
                 if new_sl and new_sl != old_sl and not tr.get("sl_moved_to_be"):

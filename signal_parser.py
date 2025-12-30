@@ -155,6 +155,38 @@ def parse_signal(text: str, quote: str = "USDT") -> Optional[Dict[str, Any]]:
     }
 
 
+def parse_signal_update(text: str) -> Dict[str, Any]:
+    """
+    Parse signal for SL/DCA updates only.
+
+    Unlike parse_signal(), this does NOT require "NEW SIGNAL" in text.
+    Used for checking if an existing signal was updated with new SL/DCA values.
+
+    Returns dict with sl_price and dca_prices (may be None/empty if not found).
+    """
+    result = {
+        "sl_price": None,
+        "dca_prices": [],
+    }
+
+    # Parse Stop Loss
+    msl = RE_SL.search(text)
+    if msl:
+        result["sl_price"] = float(msl.group(1))
+
+    # Parse DCA prices
+    dcas: List[float] = []
+    for m in RE_DCA.finditer(text):
+        idx = int(m.group(1))
+        price = float(m.group(2))
+        while len(dcas) < idx:
+            dcas.append(0.0)
+        dcas[idx-1] = price
+    result["dca_prices"] = [p for p in dcas if p > 0]
+
+    return result
+
+
 def signal_hash(sig: Dict[str, Any]) -> str:
     """Generate unique hash for signal deduplication."""
     core = f"{sig.get('symbol')}|{sig.get('side')}|{sig.get('trigger')}|{sig.get('tp_prices')}|{sig.get('dca_prices')}"
