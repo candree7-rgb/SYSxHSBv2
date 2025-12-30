@@ -83,14 +83,15 @@ def main():
 
     # ----- Signal Update Checker -----
     def check_signal_updates():
-        """Re-read Discord messages for open trades and apply SL/DCA updates."""
-        open_trades = [tr for tr in st.get("open_trades", {}).values()
-                       if tr.get("status") == "open" and tr.get("discord_msg_id")]
+        """Re-read Discord messages for open/pending trades and apply SL/DCA updates."""
+        # Check BOTH pending and open trades (signal may be updated before entry fills)
+        active_trades = [tr for tr in st.get("open_trades", {}).values()
+                        if tr.get("status") in ("pending", "open") and tr.get("discord_msg_id")]
 
-        if not open_trades:
+        if not active_trades:
             return
 
-        for tr in open_trades:
+        for tr in active_trades:
             try:
                 msg_id = tr.get("discord_msg_id")
                 if not msg_id:
@@ -118,26 +119,36 @@ def main():
                 # Check if SL changed
                 new_sl = sig.get("sl_price")
                 old_sl = tr.get("sl_price")
+                is_open = tr.get("status") == "open"
 
                 if new_sl and new_sl != old_sl and not tr.get("sl_moved_to_be"):
                     log.info(f"🔄 Signal SL updated for {tr['symbol']}: {old_sl} → {new_sl}")
-                    if engine._move_sl(tr["symbol"], new_sl):
-                        tr["sl_price"] = new_sl
-                        log.info(f"✅ SL updated on Bybit: {tr['symbol']} @ {new_sl}")
+                    tr["sl_price"] = new_sl  # Always update trade data
+                    if is_open:
+                        # Only update on Bybit if trade is already open
+                        if engine._move_sl(tr["symbol"], new_sl):
+                            log.info(f"✅ SL updated on Bybit: {tr['symbol']} @ {new_sl}")
+                    else:
+                        log.info(f"📝 SL saved for {tr['symbol']} (will apply on entry fill)")
 
                 # Check if DCA added (was empty, now has value)
                 new_dcas = sig.get("dca_prices") or []
                 old_dcas = tr.get("dca_prices") or []
 
-                if new_dcas and not old_dcas and not tr.get("dca_orders_placed"):
+                if new_dcas and not old_dcas:
                     log.info(f"🔄 Signal DCA added for {tr['symbol']}: {new_dcas}")
-                    tr["dca_prices"] = new_dcas
-                    # Place DCA orders - will be handled by place_post_entry_orders
-                    # but need to trigger it again since post_orders already placed
-                    engine.place_dca_orders(tr)
+                    tr["dca_prices"] = new_dcas  # Always update trade data
+                    if is_open and not tr.get("dca_orders_placed"):
+                        # Only place DCA orders if trade is already open
+                        engine.place_dca_orders(tr)
+                    elif not is_open:
+                        log.info(f"📝 DCA saved for {tr['symbol']} (will place on entry fill)")
 
             except Exception as e:
                 log.debug(f"Signal update check failed for {tr.get('symbol')}: {e}")
+
+        # Save state after checking for updates
+        save_state(STATE_FILE, st)
 
     # ----- WS thread -----
     ws_err = {"err": None}
