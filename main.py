@@ -190,6 +190,7 @@ def main():
                         continue
 
                     log.info(f"📨 Signal parsed: {sig['symbol']} {sig['side'].upper()} @ {sig['trigger']}")
+                    log.info(f"   TPs: {sig.get('tp_prices', [])} | DCAs: {sig.get('dca_prices', [])} | SL: {sig.get('sl_price')}")
 
                     sh = signal_hash(sig)
                     seen = set(st.get("seen_signal_hashes", []))
