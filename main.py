@@ -76,6 +76,69 @@ def main():
     last_heartbeat = time.time()
     HEARTBEAT_INTERVAL = 300  # Log heartbeat every 5 minutes
 
+    # Signal update tracking
+    # First check after 10 seconds, then every 60 seconds
+    last_signal_update_check = time.time() - 50  # Will trigger first check after ~10 sec
+    SIGNAL_UPDATE_INTERVAL = 60  # Check for signal updates every 60 seconds
+
+    # ----- Signal Update Checker -----
+    def check_signal_updates():
+        """Re-read Discord messages for open trades and apply SL/DCA updates."""
+        open_trades = [tr for tr in st.get("open_trades", {}).values()
+                       if tr.get("status") == "open" and tr.get("discord_msg_id")]
+
+        if not open_trades:
+            return
+
+        for tr in open_trades:
+            try:
+                msg_id = tr.get("discord_msg_id")
+                if not msg_id:
+                    continue
+
+                # Fetch single message by ID
+                import requests
+                url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages/{msg_id}"
+                headers = {
+                    "Authorization": DISCORD_TOKEN,
+                    "User-Agent": "Mozilla/5.0",
+                }
+                r = requests.get(url, headers=headers, timeout=10)
+                if r.status_code != 200:
+                    continue
+
+                msg = r.json()
+                txt = discord.extract_text(msg)
+
+                # Parse the updated signal
+                sig = parse_signal(txt, quote=QUOTE)
+                if not sig:
+                    continue
+
+                # Check if SL changed
+                new_sl = sig.get("sl_price")
+                old_sl = tr.get("sl_price")
+
+                if new_sl and new_sl != old_sl and not tr.get("sl_moved_to_be"):
+                    log.info(f"🔄 Signal SL updated for {tr['symbol']}: {old_sl} → {new_sl}")
+                    if engine._move_sl(tr["symbol"], new_sl):
+                        tr["sl_price"] = new_sl
+                        log.info(f"✅ SL updated on Bybit: {tr['symbol']} @ {new_sl}")
+
+                # Check if DCA added (was empty, now has value)
+                new_dcas = sig.get("dca_prices") or []
+                old_dcas = tr.get("dca_prices") or []
+
+                if new_dcas and not old_dcas and not tr.get("dca_orders_placed"):
+                    log.info(f"🔄 Signal DCA added for {tr['symbol']}: {new_dcas}")
+                    tr["dca_prices"] = new_dcas
+                    # Place DCA orders - will be handled by place_post_entry_orders
+                    # but need to trigger it again since post_orders already placed
+                    engine.place_dca_orders(tr)
+
+            except Exception as e:
+                log.debug(f"Signal update check failed for {tr.get('symbol')}: {e}")
+
     # ----- WS thread -----
     ws_err = {"err": None}
 
@@ -127,6 +190,11 @@ def main():
             engine.check_tp_fills_fallback()  # Catch TP1 fills if WS missed
             engine.check_position_alerts()    # Send Telegram alerts if position P&L crosses thresholds
             engine.log_daily_stats()          # Log stats once per day
+
+            # Check for signal updates (SL/DCA changes in Discord)
+            if time.time() - last_signal_update_check > SIGNAL_UPDATE_INTERVAL:
+                check_signal_updates()
+                last_signal_update_check = time.time()
 
             # entry-fill fallback (polling) and post-orders placement
             for tid, tr in list(st.get("open_trades", {}).items()):
@@ -190,6 +258,7 @@ def main():
                         continue
 
                     log.info(f"📨 Signal parsed: {sig['symbol']} {sig['side'].upper()} @ {sig['trigger']}")
+                    log.info(f"   TPs: {sig.get('tp_prices', [])} | DCAs: {sig.get('dca_prices', [])} | SL: {sig.get('sl_price')}")
 
                     sh = signal_hash(sig)
                     seen = set(st.get("seen_signal_hashes", []))
@@ -224,6 +293,7 @@ def main():
                         "placed_ts": time.time(),
                         "base_qty": engine.calc_base_qty(sig["symbol"], float(sig["trigger"])),
                         "raw": sig.get("raw", ""),
+                        "discord_msg_id": mid,  # Track message ID for updates
                     }
                     inc_trades_today()
                     log.info(f"🟡 ENTRY PLACED {sig['symbol']} {sig['side'].upper()} trigger={sig['trigger']} (id={trade_id})")

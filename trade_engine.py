@@ -1228,3 +1228,92 @@ class TradeEngine:
                 db_export.update_daily_equity(equity, today_trades, today_wins, today_losses)
             except Exception as e:
                 self.log.debug(f"Failed to update daily equity: {e}")
+
+    def place_dca_orders(self, trade: Dict[str, Any]) -> bool:
+        """Place DCA orders for a trade (called when DCA is added to signal after entry)."""
+        symbol = trade["symbol"]
+        side = trade.get("order_side")  # "Sell" or "Buy"
+        base_qty = float(trade.get("base_qty", 0))
+        dca_prices: List[float] = trade.get("dca_prices") or []
+
+        if not dca_prices:
+            self.log.debug(f"No DCA prices for {symbol}")
+            return False
+
+        if trade.get("dca_orders_placed"):
+            self.log.debug(f"DCA orders already placed for {symbol}")
+            return False
+
+        # Get instrument rules
+        rules = self._get_instrument_rules(symbol)
+        tick_size = rules["tick_size"]
+        qty_step = rules["qty_step"]
+        min_qty = rules["min_qty"]
+
+        dca_to_place = min(len(dca_prices), len(DCA_QTY_MULTS))
+        self.log.info(f"📊 Placing {dca_to_place} DCAs for {symbol} (mults: {DCA_QTY_MULTS[:dca_to_place]})")
+
+        if dca_to_place == 0:
+            return False
+
+        last = self.bybit.last_price(CATEGORY, symbol)
+
+        dca_orders = []
+        for j in range(1, dca_to_place + 1):
+            price = self._round_price(float(dca_prices[j-1]), tick_size)
+            mult = DCA_QTY_MULTS[j-1]
+            qty = self._round_qty(base_qty * mult, qty_step, min_qty)
+            td = self._trigger_direction(last, price)
+            dca_orders.append({
+                "idx": j,
+                "body": {
+                    "category": CATEGORY,
+                    "symbol": symbol,
+                    "side": side,
+                    "orderType": "Limit",
+                    "qty": f"{qty}",
+                    "price": f"{price:.10f}",
+                    "timeInForce": "GTC",
+                    "triggerDirection": td,
+                    "triggerPrice": f"{price:.10f}",
+                    "triggerBy": "LastPrice",
+                    "reduceOnly": False,
+                    "closeOnTrigger": False,
+                    "orderLinkId": f"{trade['id']}:DCA{j}",
+                }
+            })
+
+        if DRY_RUN:
+            for o in dca_orders:
+                self.log.info(f"DRY_RUN DCA{o['idx']}: {o['body']}")
+            trade["dca_orders_placed"] = True
+            return True
+
+        # Place DCA orders
+        success = True
+        for o in dca_orders:
+            try:
+                resp = self.bybit.place_order(o["body"])
+                oid = (resp.get("result") or {}).get("orderId")
+                trade.setdefault("dca_order_ids", {})[str(o["idx"])] = oid
+                self.log.info(f"✅ DCA{o['idx']} placed for {symbol} @ {dca_prices[o['idx']-1]}")
+            except Exception as e:
+                self.log.error(f"❌ DCA{o['idx']} failed for {symbol}: {e}")
+                success = False
+
+        trade["dca_orders_placed"] = True
+
+        # Also update SL if no SL was set before (use DCA+4% rule)
+        if not trade.get("sl_price") and not trade.get("sl_moved_to_be"):
+            dca_buffer_pct = 0.04
+            first_dca = float(dca_prices[0])
+            if side == "Sell":
+                new_sl = first_dca * (1 + dca_buffer_pct)
+            else:
+                new_sl = first_dca * (1 - dca_buffer_pct)
+            new_sl = self._round_price(new_sl, tick_size)
+            self.log.info(f"📍 Setting SL at DCA+4% for {symbol}: {new_sl} (DCA1: {first_dca})")
+            if self._move_sl(symbol, new_sl):
+                trade["sl_price"] = new_sl
+
+        return success
