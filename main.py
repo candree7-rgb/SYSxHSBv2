@@ -91,6 +91,8 @@ def main():
         if not active_trades:
             return
 
+        log.info(f"🔍 Checking {len(active_trades)} trade(s) for signal updates...")
+
         for tr in active_trades:
             try:
                 msg_id = tr.get("discord_msg_id")
