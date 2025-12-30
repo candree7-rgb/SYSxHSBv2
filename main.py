@@ -97,6 +97,7 @@ def main():
             try:
                 msg_id = tr.get("discord_msg_id")
                 if not msg_id:
+                    log.debug(f"No discord_msg_id for {tr.get('symbol')}")
                     continue
 
                 # Fetch single message by ID
@@ -108,6 +109,7 @@ def main():
                 }
                 r = requests.get(url, headers=headers, timeout=10)
                 if r.status_code != 200:
+                    log.warning(f"Failed to fetch message {msg_id}: HTTP {r.status_code}")
                     continue
 
                 msg = r.json()
@@ -116,11 +118,17 @@ def main():
                 # Parse the updated signal
                 sig = parse_signal(txt, quote=QUOTE)
                 if not sig:
+                    log.debug(f"Could not parse signal from message {msg_id}")
                     continue
 
-                # Check if SL changed
+                # Log what we found
                 new_sl = sig.get("sl_price")
+                new_dcas = sig.get("dca_prices") or []
                 old_sl = tr.get("sl_price")
+                old_dcas = tr.get("dca_prices") or []
+
+                log.info(f"   {tr['symbol']}: old SL={old_sl}, new SL={new_sl} | old DCAs={old_dcas}, new DCAs={new_dcas}")
+
                 is_open = tr.get("status") == "open"
 
                 if new_sl and new_sl != old_sl and not tr.get("sl_moved_to_be"):
