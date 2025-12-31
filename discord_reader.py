@@ -52,6 +52,27 @@ class DiscordReader:
             params["after"] = str(max_id)
         return collected
 
+    def fetch_message(self, message_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single message by ID. Returns None on error."""
+        try:
+            # Fetch messages around this ID and find the exact one
+            # Use limit=5 to ensure we get the target message
+            params = {"around": str(message_id), "limit": 5}
+            r = self._request_with_retry(
+                f"https://discord.com/api/v10/channels/{self.channel_id}/messages",
+                params
+            )
+            if r.status_code != 200:
+                return None
+            msgs = r.json() or []
+            for m in msgs:
+                if str(m.get("id")) == str(message_id):
+                    return m
+            # If exact match not found, return first message (might be the one)
+            return msgs[0] if msgs else None
+        except Exception:
+            return None
+
     @staticmethod
     def message_timestamp_unix(msg: Dict[str, Any]) -> float:
         # Discord ISO timestamp: "2025-12-12T15:12:34.123456+00:00" or "...Z"

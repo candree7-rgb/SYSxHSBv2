@@ -100,20 +100,17 @@ def main():
                     log.info(f"   {tr.get('symbol')}: No msg_id saved, skipping")
                     continue
 
-                # Fetch single message by ID
-                import requests
-                url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages/{msg_id}"
-                headers = {
-                    "Authorization": DISCORD_TOKEN,
-                    "User-Agent": "Mozilla/5.0",
-                }
-                r = requests.get(url, headers=headers, timeout=10)
-                if r.status_code != 200:
-                    log.warning(f"   {tr.get('symbol')}: HTTP {r.status_code} fetching msg {msg_id}")
+                # Fetch single message by ID using discord reader (uses same auth/headers)
+                msg = discord.fetch_message(str(msg_id))
+                if not msg:
+                    log.warning(f"   {tr.get('symbol')}: Could not fetch msg {msg_id}")
                     continue
 
-                msg = r.json()
                 txt = discord.extract_text(msg)
+
+                if not txt:
+                    log.warning(f"   {tr.get('symbol')}: Empty message text")
+                    continue
 
                 # Parse only SL/DCA from updated signal (doesn't require "NEW SIGNAL")
                 sig = parse_signal_update(txt)
@@ -125,7 +122,8 @@ def main():
                 old_dcas = tr.get("dca_prices") or []
 
                 log.info(f"   {tr['symbol']}: old SL={old_sl} → new SL={new_sl} | old DCAs={old_dcas} → new DCAs={new_dcas}")
-                log.debug(f"   Raw text: {txt[:300]}...")
+                # Show raw text for debugging (always, not just debug level)
+                log.info(f"   Raw text preview: {txt[:200].replace(chr(10), ' ')}...")
 
                 is_open = tr.get("status") == "open"
 
