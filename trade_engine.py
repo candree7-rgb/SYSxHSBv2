@@ -726,6 +726,9 @@ class TradeEngine:
                 tr["sl_moved_to_be"] = True
                 self.log.info(f"✅ SL -> BE {tr['symbol']} @ {be} (buffer {BE_BUFFER_PCT}%)")
 
+                # Cancel all pending DCA orders when TP1 hits
+                self._cancel_dca_orders(tr)
+
             # start trailing after TPn
             if TRAIL_ACTIVATE_ON_TP and tp_num == TRAIL_AFTER_TP_INDEX and not tr.get("trailing_started"):
                 self._start_trailing(tr, tp_num)
@@ -1002,6 +1005,38 @@ class TradeEngine:
                     # Move to trade_history before deleting
                     self._archive_trade(tr)
                     del self.state["open_trades"][tid]
+
+    def _cancel_dca_orders(self, trade: Dict[str, Any]) -> None:
+        """Cancel all pending DCA orders for a trade (called when TP1 hits)."""
+        if DRY_RUN:
+            self.log.info(f"DRY_RUN: Would cancel DCA orders for {trade['symbol']}")
+            return
+
+        symbol = trade["symbol"]
+        dca_order_ids = trade.get("dca_order_ids") or {}
+
+        if not dca_order_ids:
+            return
+
+        cancelled = 0
+        for dca_idx, order_id in dca_order_ids.items():
+            if not order_id:
+                continue
+            try:
+                self.bybit.cancel_order({
+                    "category": CATEGORY,
+                    "symbol": symbol,
+                    "orderId": order_id,
+                })
+                cancelled += 1
+                self.log.info(f"🗑️ Cancelled DCA{dca_idx} order: {order_id}")
+            except Exception as e:
+                # Order might already be filled or cancelled
+                self.log.debug(f"Could not cancel DCA{dca_idx}: {e}")
+
+        if cancelled > 0:
+            self.log.info(f"✅ Cancelled {cancelled} DCA order(s) for {symbol} (TP1 hit)")
+            trade["dca_order_ids"] = {}  # Clear the order IDs
 
     def _cancel_all_trade_orders(self, trade: Dict[str, Any]) -> None:
         """Cancel all pending DCA and TP orders for a closed trade."""
