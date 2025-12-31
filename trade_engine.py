@@ -162,15 +162,29 @@ class TradeEngine:
         Check if price has moved too far past trigger to enter.
 
         If tp1 is provided, use it as threshold (skip if TP1 already reached).
-        Otherwise fall back to percentage-based check.
+        But only apply TP1 check if price has already crossed entry in profit direction.
         """
         if tp1 and tp1 > 0:
-            # Use TP1 as threshold - if TP1 already hit, skip
             if side == "Sell":
-                # SHORT: TP1 is below entry, skip if price <= TP1
+                # SHORT: Entry is high, TP1 is below entry
+                # Price approaches from ABOVE (falling to entry) = normal
+                # Price approaches from BELOW (rising to entry) = also valid, don't skip
+                if last < trigger:
+                    # Price is below entry - will rise to trigger entry
+                    # Don't skip - the trade hasn't started yet
+                    return False
+                # Price is at/above entry - check if it dropped past TP1
+                # (This shouldn't normally happen for a fresh signal)
                 return last <= tp1
             else:
-                # LONG: TP1 is above entry, skip if price >= TP1
+                # LONG: Entry is low, TP1 is above entry
+                # Price approaches from BELOW (rising to entry) = normal
+                # Price approaches from ABOVE (falling to entry) = also valid, don't skip
+                if last > trigger:
+                    # Price is above entry - will fall to trigger entry
+                    # Don't skip - the trade hasn't started yet
+                    return False
+                # Price is at/below entry - check if it rose past TP1
                 return last >= tp1
 
         # Fallback to percentage-based check if no TP1
