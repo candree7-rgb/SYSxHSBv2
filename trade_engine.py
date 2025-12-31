@@ -157,8 +157,23 @@ class TradeEngine:
         return self._round_qty(qty, rules["qty_step"], rules["min_qty"])
 
     # ---------- entry gatekeepers ----------
-    def _too_far(self, side: str, last: float, trigger: float) -> bool:
-        # If SHORT and price already X% under trigger -> skip
+    def _too_far(self, side: str, last: float, trigger: float, tp1: float = None) -> bool:
+        """
+        Check if price has moved too far past trigger to enter.
+
+        If tp1 is provided, use it as threshold (skip if TP1 already reached).
+        Otherwise fall back to percentage-based check.
+        """
+        if tp1 and tp1 > 0:
+            # Use TP1 as threshold - if TP1 already hit, skip
+            if side == "Sell":
+                # SHORT: TP1 is below entry, skip if price <= TP1
+                return last <= tp1
+            else:
+                # LONG: TP1 is above entry, skip if price >= TP1
+                return last >= tp1
+
+        # Fallback to percentage-based check if no TP1
         if side == "Sell":
             return last <= trigger * (1 - ENTRY_TOO_FAR_PCT / 100.0)
         return last >= trigger * (1 + ENTRY_TOO_FAR_PCT / 100.0)
@@ -209,8 +224,10 @@ class TradeEngine:
             self.log.warning(f"set_leverage failed for {symbol}: {e}")
 
         last = self.bybit.last_price(CATEGORY, symbol)
-        if self._too_far(side, last, trigger):
-            self.log.info(f"SKIP {symbol} – too far past trigger (last={last}, trigger={trigger})")
+        tp_prices = sig.get("tp_prices") or []
+        tp1 = float(tp_prices[0]) if tp_prices else None
+        if self._too_far(side, last, trigger, tp1):
+            self.log.info(f"SKIP {symbol} – too far past trigger (last={last}, trigger={trigger}, tp1={tp1})")
             return None
         if self._beyond_expiry_price(side, last, trigger):
             self.log.info(f"SKIP {symbol} – beyond expiry-price rule (last={last}, trigger={trigger})")
