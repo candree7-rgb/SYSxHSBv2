@@ -11,7 +11,7 @@ from config import (
     ENTRY_EXPIRATION_MIN, ENTRY_TOO_FAR_PCT, ENTRY_TRIGGER_BUFFER_PCT, ENTRY_LIMIT_PRICE_OFFSET_PCT,
     ENTRY_EXPIRATION_PRICE_PCT,
     TP_SPLITS, DCA_QTY_MULTS, INITIAL_SL_PCT, FALLBACK_TP_PCT,
-    MOVE_SL_TO_BE_ON_TP1,
+    MOVE_SL_TO_BE_ON_TP1, BE_BUFFER_PCT,
     TRAIL_AFTER_TP_INDEX, TRAIL_DISTANCE_PCT, TRAIL_ACTIVATE_ON_TP,
     DRY_RUN
 )
@@ -689,9 +689,15 @@ class TradeEngine:
             # TP1 -> SL to BE (use avg_entry if DCAs filled, otherwise entry_price)
             if MOVE_SL_TO_BE_ON_TP1 and tp_num == 1 and not tr.get("sl_moved_to_be"):
                 be = float(tr.get("avg_entry") or tr.get("entry_price") or tr.get("trigger"))
+                # Add buffer so BE is slightly in profit (covers fees)
+                if BE_BUFFER_PCT > 0:
+                    if tr.get("order_side") == "Sell":  # SHORT
+                        be = be * (1 - BE_BUFFER_PCT / 100.0)
+                    else:  # LONG
+                        be = be * (1 + BE_BUFFER_PCT / 100.0)
                 self._move_sl(tr["symbol"], be)
                 tr["sl_moved_to_be"] = True
-                self.log.info(f"✅ SL -> BE {tr['symbol']} @ {be}")
+                self.log.info(f"✅ SL -> BE {tr['symbol']} @ {be} (buffer {BE_BUFFER_PCT}%)")
 
             # start trailing after TPn
             if TRAIL_ACTIVATE_ON_TP and tp_num == TRAIL_AFTER_TP_INDEX and not tr.get("trailing_started"):
@@ -782,6 +788,12 @@ class TradeEngine:
         # keep SL at BE if already moved; otherwise keep existing stopLoss unchanged
         if tr.get("sl_moved_to_be"):
             be_price = float(tr.get("avg_entry") or tr.get("entry_price") or tr.get("trigger"))
+            # Add buffer so BE is slightly in profit
+            if BE_BUFFER_PCT > 0:
+                if tr.get("order_side") == "Sell":  # SHORT
+                    be_price = be_price * (1 - BE_BUFFER_PCT / 100.0)
+                else:  # LONG
+                    be_price = be_price * (1 + BE_BUFFER_PCT / 100.0)
             be_price = self._round_price(be_price, tick_size)
             body["stopLoss"] = f"{be_price:.10f}"
 
@@ -855,13 +867,19 @@ class TradeEngine:
 
             if should_move_to_be:
                 be = float(tr.get("avg_entry") or tr.get("entry_price") or tr.get("trigger"))
+                # Add buffer so BE is slightly in profit
+                if BE_BUFFER_PCT > 0:
+                    if tr.get("order_side") == "Sell":  # SHORT
+                        be = be * (1 - BE_BUFFER_PCT / 100.0)
+                    else:  # LONG
+                        be = be * (1 + BE_BUFFER_PCT / 100.0)
                 if self._move_sl(symbol, be):
                     tr["sl_moved_to_be"] = True
                     # Also track TP1 as filled if not already
                     if 1 not in tr.get("tp_fills_list", []):
                         tr.setdefault("tp_fills_list", []).append(1)
                         tr["tp_fills"] = len(tr["tp_fills_list"])
-                    self.log.info(f"✅ SL -> BE (fallback) {symbol} @ {be}")
+                    self.log.info(f"✅ SL -> BE (fallback) {symbol} @ {be} (buffer {BE_BUFFER_PCT}%)")
 
     def cancel_expired_entries(self) -> None:
         now = time.time()
