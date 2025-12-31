@@ -193,12 +193,25 @@ class TradeEngine:
         return last >= trigger * (1 + ENTRY_TOO_FAR_PCT / 100.0)
 
     def _beyond_expiry_price(self, side: str, last: float, trigger: float) -> bool:
-        # Extra: if market already beyond trigger by ENTRY_EXPIRATION_PRICE_PCT, skip (avoids bad market fills)
+        """
+        Skip if price moved too far past entry in profit direction.
+        Only applies when price has already crossed entry level.
+        """
         if ENTRY_EXPIRATION_PRICE_PCT <= 0:
             return False
+
         if side == "Sell":
+            # SHORT: only check if price is at/below entry (crossed into profit zone)
+            if last < trigger:
+                # Price is below entry - will rise to trigger, don't skip
+                return False
             return last <= trigger * (1 - ENTRY_EXPIRATION_PRICE_PCT / 100.0)
-        return last >= trigger * (1 + ENTRY_EXPIRATION_PRICE_PCT / 100.0)
+        else:
+            # LONG: only check if price is at/above entry (crossed into profit zone)
+            if last > trigger:
+                # Price is above entry - will fall to trigger, don't skip
+                return False
+            return last >= trigger * (1 + ENTRY_EXPIRATION_PRICE_PCT / 100.0)
 
     def _trigger_direction(self, last: float, trigger: float) -> int:
         # Bybit: 1=rises to trigger, 2=falls to trigger
