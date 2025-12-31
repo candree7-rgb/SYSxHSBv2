@@ -108,6 +108,10 @@ def main():
 
                 txt = discord.extract_text(msg)
 
+                if not txt:
+                    log.warning(f"   {tr.get('symbol')}: Empty message text")
+                    continue
+
                 # Parse only SL/DCA from updated signal (doesn't require "NEW SIGNAL")
                 sig = parse_signal_update(txt)
 
@@ -118,7 +122,8 @@ def main():
                 old_dcas = tr.get("dca_prices") or []
 
                 log.info(f"   {tr['symbol']}: old SL={old_sl} → new SL={new_sl} | old DCAs={old_dcas} → new DCAs={new_dcas}")
-                log.debug(f"   Raw text: {txt[:300]}...")
+                # Show raw text for debugging (always, not just debug level)
+                log.info(f"   Raw text preview: {txt[:200].replace(chr(10), ' ')}...")
 
                 is_open = tr.get("status") == "open"
 

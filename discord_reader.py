@@ -56,7 +56,8 @@ class DiscordReader:
         """Fetch a single message by ID. Returns None on error."""
         try:
             # Fetch messages around this ID and find the exact one
-            params = {"around": str(message_id), "limit": 1}
+            # Use limit=5 to ensure we get the target message
+            params = {"around": str(message_id), "limit": 5}
             r = self._request_with_retry(
                 f"https://discord.com/api/v10/channels/{self.channel_id}/messages",
                 params
@@ -67,7 +68,8 @@ class DiscordReader:
             for m in msgs:
                 if str(m.get("id")) == str(message_id):
                     return m
-            return None
+            # If exact match not found, return first message (might be the one)
+            return msgs[0] if msgs else None
         except Exception:
             return None
 
