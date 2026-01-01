@@ -112,6 +112,17 @@ def main():
                     log.warning(f"   {tr.get('symbol')}: Empty message text")
                     continue
 
+                # Check for TRADE CANCELLED signal
+                if "TRADE CANCELLED" in txt.upper() or "❌" in txt and "CANCEL" in txt.upper():
+                    log.warning(f"❌ TRADE CANCELLED detected for {tr['symbol']}!")
+                    try:
+                        # Close position and cancel all orders
+                        engine.emergency_close_trade(tr)
+                        log.info(f"✅ Trade {tr['symbol']} closed due to signal cancellation")
+                    except Exception as e:
+                        log.error(f"Failed to close cancelled trade {tr['symbol']}: {e}")
+                    continue
+
                 # Parse only SL/DCA from updated signal (doesn't require "NEW SIGNAL")
                 sig = parse_signal_update(txt)
 

@@ -1085,6 +1085,76 @@ class TradeEngine:
         except Exception as e:
             self.log.warning(f"Failed to cleanup orders for {symbol}: {e}")
 
+    def emergency_close_trade(self, trade: Dict[str, Any]) -> bool:
+        """
+        Emergency close a trade when signal is cancelled.
+        Cancels all pending orders and closes the position at market.
+        """
+        symbol = trade["symbol"]
+        trade_id = trade["id"]
+        status = trade.get("status")
+
+        self.log.warning(f"🚨 Emergency closing trade {symbol} (signal cancelled)")
+
+        if DRY_RUN:
+            self.log.info(f"DRY_RUN: Would emergency close {symbol}")
+            trade["status"] = "cancelled"
+            trade["exit_reason"] = "signal_cancelled"
+            return True
+
+        try:
+            # Step 1: Cancel all pending orders (TPs, DCAs, entry if pending)
+            self._cancel_all_trade_orders(trade)
+
+            # Step 2: If trade is open, close position at market
+            if status == "open":
+                size, avg = self.position_size_avg(symbol)
+                if size > 0:
+                    # Determine close side (opposite of position)
+                    close_side = _opposite_side(trade["order_side"])
+
+                    body = {
+                        "category": CATEGORY,
+                        "symbol": symbol,
+                        "side": close_side,
+                        "orderType": "Market",
+                        "qty": str(size),
+                        "reduceOnly": True,
+                    }
+                    self.bybit.place_order(body)
+                    self.log.info(f"📤 Market close order placed for {symbol} qty={size}")
+
+            # Step 3: If pending entry, cancel the entry order
+            elif status == "pending":
+                entry_order_id = trade.get("entry_order_id")
+                if entry_order_id:
+                    try:
+                        self.bybit.cancel_order({
+                            "category": CATEGORY,
+                            "symbol": symbol,
+                            "orderId": entry_order_id,
+                        })
+                        self.log.info(f"🗑️ Cancelled pending entry order for {symbol}")
+                    except Exception as e:
+                        self.log.debug(f"Could not cancel entry order: {e}")
+
+            # Step 4: Mark trade as cancelled
+            trade["status"] = "cancelled"
+            trade["exit_reason"] = "signal_cancelled"
+            trade["closed_ts"] = time.time()
+
+            # Archive and remove from open trades
+            self._archive_trade(trade)
+            if trade_id in self.state.get("open_trades", {}):
+                del self.state["open_trades"][trade_id]
+
+            self.log.info(f"✅ Trade {symbol} emergency closed successfully")
+            return True
+
+        except Exception as e:
+            self.log.error(f"Emergency close failed for {symbol}: {e}")
+            return False
+
     def _export_trade_to_db(self, trade: Dict[str, Any]) -> None:
         """Export trade to PostgreSQL database immediately after close."""
         try:
