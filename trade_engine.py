@@ -519,6 +519,9 @@ class TradeEngine:
                             trade.setdefault("tp_order_ids", {})[str(idx+1)] = oid
                             if idx == 0:
                                 trade["tp1_order_id"] = oid
+                        elif order_type == "DCA":
+                            trade.setdefault("dca_order_ids", {})[str(idx)] = oid
+                            self.log.info(f"✅ DCA{idx} placed: {oid}")
                     except Exception as e:
                         self.log.warning(f"Order placement failed: {e}")
 
@@ -1024,6 +1027,7 @@ class TradeEngine:
         dca_order_ids = trade.get("dca_order_ids") or {}
 
         if not dca_order_ids:
+            self.log.info(f"📝 No DCA orders to cancel for {symbol} (none were placed)")
             return
 
         cancelled = 0
