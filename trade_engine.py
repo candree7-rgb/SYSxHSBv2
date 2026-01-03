@@ -1024,6 +1024,7 @@ class TradeEngine:
         dca_order_ids = trade.get("dca_order_ids") or {}
 
         if not dca_order_ids:
+            self.log.info(f"📝 No DCA orders to cancel for {symbol} (none were placed)")
             return
 
         cancelled = 0
